@@ -80,12 +80,11 @@
     const CONNECTION_PROBABILITY = 0.4;
     const ANIMATION_DURATION = 500;
     const READING_DURATION = 1200;
-    const MIN_EXTRA_VALUE = 0;
-    const MAX_EXTRA_VALUE = 15;
 
     let nodes = [];
     let edges = [];
 
+    let extraNodes = 0;
     let extraValue = 5;
     let isAnimating = false;
     let animationEdges = [];
@@ -116,7 +115,7 @@
     }
 
     function generateLevel() {
-      const nodeCount = randomInt(7, 14);
+      const nodeCount = randomInt(7 + extraNodes, 14 + extraNodes);
 
       // Create nodes
       nodes = [];
@@ -242,8 +241,11 @@
       });
 
       if (nodes.every(i => i.value >= 0)) {
-        extraValue = Math.max(MIN_EXTRA_VALUE, extraValue - 1);
-        displayMessage("Level Complete!" + (extraValue !== MIN_EXTRA_VALUE ? " Increasing difficulty..." : ""));
+        extraValue = Math.max(0, extraValue - 1);
+        if (extraValue === 0) {
+          extraNodes++;
+        }
+        displayMessage("Raising difficulty...");
         setTimeout(startNewLevel, READING_DURATION);
       }
 
@@ -357,14 +359,15 @@
     }
 
     document.getElementById("giveup").addEventListener("click", () => {
-      extraValue = Math.min(MAX_EXTRA_VALUE, extraValue + 2);
-      displayMessage("Starting an easier level...");
+      extraValue += 2;
+      extraNodes = Math.max(0, extraNodes - 1);
+      displayMessage("Reducing difficulty...");
       setTimeout(startNewLevel, READING_DURATION);
     });
 
     document.getElementById("export").addEventListener("click", () => {
       const url = URL.createObjectURL(new Blob(
-        [btoa(unescape(encodeURIComponent(JSON.stringify({ nodes, edges, extraValue }))))],
+        [btoa(unescape(encodeURIComponent(JSON.stringify({ nodes, edges, extraValue, extraNodes }))))],
         { type: "text/plain" },
       ));
       download.href = url;
@@ -379,7 +382,7 @@
         const reader = new FileReader();
         reader.onload = (event) => {
           try {
-            ({ nodes, edges, extraValue } = JSON.parse(decodeURIComponent(escape(atob(event.target.result.trim())))));
+            ({ nodes, edges, extraValue, extraNodes } = JSON.parse(decodeURIComponent(escape(atob(event.target.result.trim())))));
             isAnimating = false;
             animationEdges = [];
             nodeBeingDistributed = null;
