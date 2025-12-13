@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Equilibrium</title>
+  <style>
+    body {
+      background: #000;
+      color: white;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    #message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translateX(-50%) translateY(-50%);
+      font-size: 1.5vmax;
+      font-family: monospace;
+      background-color: #111;
+      padding: 2vmax;
+      cursor: default;
+    }
+
+    #buttons {
+      position: absolute;
+      bottom: 1vh;
+      right: 1vw;
+    }
+
+    button {
+      border: none;
+      padding: 1vmax;
+      font-size: 1vmax;
+      font-family: monospace;
+      cursor: pointer;
+    }
+
+    #download {
+      display: none;
+    }
+
+    #upload {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="board"></canvas>
+  <div id="message">
+    Only you can bring balance to the Network!<br /><br />
+    Click on nodes to distribute value amongst neighbors to achieve <strong><span
+        style="color: #7c70ff">Equilibrium</span></strong>.<br /><br />
+    <small>Click anywhere to get started.</small>
+  </div>
+  <div id="buttons">
+    <button id="giveup">Give up</button>
+    <button id="export">Export level</button>
+    <button id="import">Import level</button>
+    <button id="help">Help</button>
+    <a href="https://github.com/BURG3R5/Equilibrium"><button id="source">Source</button></a>
+  </div>
+  <a id="download" download="equilibrium-export.txt"></a>
+  <input id="upload" type="file" accept=".txt,text/plain" />
+  <script>
+    const board = document.getElementById("board"),
+      message = document.getElementById("message"),
+      download = document.getElementById("download"),
+      upload = document.getElementById("upload");
+    const context = board.getContext("2d");
+
+    board.width = window.innerWidth;
+    board.height = window.innerHeight;
+
+    const NODE_SIZE = 30;
+    const BORDER_ZONE_WIDTH = 60;
+    const CONNECTION_PROBABILITY = 0.4;
+    const ANIMATION_DURATION = 500;
+    const READING_DURATION = 1200;
+    const MIN_EXTRA_VALUE = 0;
+    const MAX_EXTRA_VALUE = 15;
+
+    let nodes = [];
+    let edges = [];
+
+    let extraValue = 5;
+    let isAnimating = false;
+    let animationEdges = [];
+    let animationStartTime = 0;
+    let nodeBeingDistributed = null;
+
+    let hasGameStarted = false;
+    board.addEventListener("click", onInitialClick, { once: true });
+    message.addEventListener("click", onInitialClick, { once: true });
+
+    function onInitialClick() {
+      if (hasGameStarted) return;
+      hasGameStarted = true;
+      clearMessage();
+      startNewLevel();
+    }
+
+    function startNewLevel() {
+      clearMessage();
+      generateLevel();
+      spreadNodesVisually();
+      drawLevel();
+    }
+
+    function clearMessage() {
+      message.textContent = "";
+      message.style.display = "none";
+    }
+
+    function generateLevel() {
+      const nodeCount = randomInt(7, 14);
+
+      // Create nodes
+      nodes = [];
+      for (let i = 0; i < nodeCount; i++)
+        nodes.push({
+          id: i,
+          x: Math.random() * board.width,
+          y: Math.random() * board.height,
+          value: randomInt(-3, 4),
+          neighbors: [],
+        });
+
+      // Create tree
+      edges = [];
+      for (let i = 1; i < nodes.length; i++)
+        connectNodes(i, randomInt(0, i));
+
+      // Add edges
+      for (let k = 0; k < nodes.length; k++)
+        if (Math.random() < CONNECTION_PROBABILITY)
+          connectNodes(randomNodeIndex(), randomNodeIndex());
+
+      // Adjust values
+      let deltaValue = (edges.length - nodes.length + 1 + extraValue) - (nodes.reduce((sum, node) => sum + node.value, 0));
+      let dValue = deltaValue > 0 ? 1 : -1;
+      for (; deltaValue != 0; deltaValue -= dValue)
+        nodes[randomNodeIndex()].value += dValue;
+    }
+
+    function connectNodes(i, j) {
+      if (i !== j && !nodes[i].neighbors.includes(j)) {
+        nodes[i].neighbors.push(j);
+        nodes[j].neighbors.push(i);
+        edges.push([i, j]);
+      }
+    }
+
+    function randomNodeIndex() { return randomInt(0, nodes.length) }
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min)) + min;
+    }
+
+    function spreadNodesVisually() {
+      const REPULSION_STEPS = 8192,
+        REPULSION_STRENGTH = 5000,
+        SPRING_STRENGTH = 0.01,
+        RELAXED_SPRING_LENGTH = 130,
+        MAX_DISPLACEMENT = 5,
+        MINIMUM_DISTANCE = 0.01;
+
+      for (let step = 0; step < REPULSION_STEPS; step++) {
+        const forceX = new Array(nodes.length).fill(0), forceY = new Array(nodes.length).fill(0);
+
+        // Repel from nodes
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const dx = nodes[j].x - nodes[i].x, dy = nodes[j].y - nodes[i].y;
+            const distance = Math.sqrt((dx * dx + dy * dy) || MINIMUM_DISTANCE);
+            const force = REPULSION_STRENGTH / (distance * distance);
+            const fx = force * (dx / distance), fy = force * (dy / distance);
+            forceX[i] -= fx; forceY[i] -= fy;
+            forceX[j] += fx; forceY[j] += fy;
+          }
+        }
+
+        // Attract along edges
+        for (let k = 0; k < edges.length; k++) {
+          const [i, j] = edges[k];
+          const dx = nodes[j].x - nodes[i].x, dy = nodes[j].y - nodes[i].y;
+          const edgeLength = Math.sqrt((dx * dx + dy * dy) || MINIMUM_DISTANCE);
+          const force = SPRING_STRENGTH * (edgeLength - RELAXED_SPRING_LENGTH);
+          const fx = force * (dx / edgeLength), fy = force * (dy / edgeLength);
+          forceX[i] += fx; forceY[i] += fy;
+          forceX[j] -= fx; forceY[j] -= fy;
+        }
+
+        // Apply forces
+        for (let i = 0; i < nodes.length; i++) {
+          let dx = forceX[i], dy = forceY[i];
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len > MAX_DISPLACEMENT) {
+            dx = (dx / len) * MAX_DISPLACEMENT;
+            dy = (dy / len) * MAX_DISPLACEMENT;
+          }
+          nodes[i].x += dx; nodes[i].y += dy;
+
+          // Keep node inside board
+          nodes[i].x = Math.max(BORDER_ZONE_WIDTH, Math.min(board.width - BORDER_ZONE_WIDTH, nodes[i].x));
+          nodes[i].y = Math.max(BORDER_ZONE_WIDTH, Math.min(board.height - BORDER_ZONE_WIDTH, nodes[i].y));
+        }
+      }
+    }
+
+    function drawLevel() {
+      context.clearRect(0, 0, board.width, board.height);
+
+      // Draw edges
+      edges.forEach(([i, j]) => {
+        context.beginPath();
+        context.strokeStyle = "#ccc";
+        context.lineWidth = 8;
+        context.moveTo(nodes[i].x, nodes[i].y);
+        context.lineTo(nodes[j].x, nodes[j].y);
+        context.stroke();
+      });
+
+      // Draw nodes
+      nodes.forEach(node => {
+        context.beginPath();
+        context.fillStyle = node.value < 0 ? "#FF7070" : "#70FFA4";
+        context.strokeStyle = "#000";
+        context.lineWidth = 2;
+        context.arc(node.x, node.y, NODE_SIZE, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+
+        context.fillStyle = "#000000";
+        context.font = "16px monospace";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(node.value, node.x, node.y);
+      });
+
+      if (nodes.every(i => i.value >= 0)) {
+        extraValue = Math.max(MIN_EXTRA_VALUE, extraValue - 1);
+        displayMessage("Level Complete!" + (extraValue !== MIN_EXTRA_VALUE ? " Increasing difficulty..." : ""));
+        setTimeout(startNewLevel, READING_DURATION);
+      }
+
+      if (isAnimating) {
+        animate();
+      }
+    }
+
+    function displayMessage(text) {
+      message.textContent = text;
+      message.style.display = "block";
+    }
+
+    board.addEventListener("click", onBoardClick);
+    board.addEventListener("contextmenu", onBoardRightClick);
+
+    function onBoardClick(event) {
+      if (isAnimating) return;
+      const rect = board.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left, mouseY = event.clientY - rect.top;
+
+      for (let i = 0; i < nodes.length; i++) {
+        if ((mouseX - nodes[i].x) ** 2 + (mouseY - nodes[i].y) ** 2 < NODE_SIZE * NODE_SIZE) {
+          startDistribution(i);
+          break;
+        }
+      }
+    }
+
+    function onBoardRightClick(event) {
+      event.preventDefault();
+      if (isAnimating) return;
+
+      const rect = board.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left, mouseY = event.clientY - rect.top;
+
+      for (let i = 0; i < nodes.length; i++) {
+        if ((mouseX - nodes[i].x) ** 2 + (mouseY - nodes[i].y) ** 2 < NODE_SIZE * NODE_SIZE) {
+          if (nodes[i].neighbors.length === 1 && nodes[i].value > 0) {
+            nodes[nodes[i].neighbors[0]].value += nodes[i].value;
+            nodes[i].value = 0;
+
+            drawLevel();
+          }
+          break;
+        }
+      }
+    }
+
+    function startDistribution(i) {
+      nodeBeingDistributed = i;
+      animationEdges = nodes[i].neighbors.map(j => ({ from: i, to: j }));
+      isAnimating = true;
+      animationStartTime = performance.now();
+      animate();
+    }
+
+    function animate() {
+      let t = (performance.now() - animationStartTime) / ANIMATION_DURATION;
+      if (t > 1) t = 1;
+
+      animationEdges.forEach(({ from, to }) => {
+        const a = nodes[from], b = nodes[to];
+        drawArrow(a.x, a.y, b.x, b.y, t);
+      });
+
+      if (t < 1) { requestAnimationFrame(drawLevel); } else {
+        isAnimating = false;
+        animationEdges = [];
+        finishDistribution();
+      }
+    }
+
+    function drawArrow(fromX, fromY, toX, toY, t) {
+      const dx = toX - fromX, dy = toY - fromY;
+      const length = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      const offsetX = (dx / length) * NODE_SIZE * 0.7, offsetY = (dy / length) * NODE_SIZE * 0.7;
+      fromX += offsetX; fromY += offsetY;
+      toX -= offsetX; toY -= offsetY;
+      const currX = fromX + (toX - fromX) * t, currY = fromY + (toY - fromY) * t;
+      const ARROWHEAD_SIZE = 8;
+      const angle = Math.atan2(dy, dx);
+
+      context.fillStyle = "#000";
+      context.lineWidth = 1;
+
+      context.beginPath();
+      context.moveTo(currX, currY);
+      context.lineTo(
+        currX - ARROWHEAD_SIZE * Math.cos(angle - Math.PI / 6),
+        currY - ARROWHEAD_SIZE * Math.sin(angle - Math.PI / 6)
+      );
+      context.lineTo(
+        currX - ARROWHEAD_SIZE * Math.cos(angle + Math.PI / 6),
+        currY - ARROWHEAD_SIZE * Math.sin(angle + Math.PI / 6)
+      );
+      context.closePath();
+      context.fill();
+    }
+
+    function finishDistribution() {
+      if (nodeBeingDistributed === null) return;
+      const i = nodeBeingDistributed;
+      nodeBeingDistributed = null;
+
+      nodes[i].value -= nodes[i].neighbors.length;
+      nodes[i].neighbors.forEach(j => nodes[j].value++);
+
+      drawLevel();
+    }
+
+    document.getElementById("giveup").addEventListener("click", () => {
+      extraValue = Math.min(MAX_EXTRA_VALUE, extraValue + 2);
+      displayMessage("Starting an easier level...");
+      setTimeout(startNewLevel, READING_DURATION);
+    });
+
+    document.getElementById("export").addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob(
+        [btoa(unescape(encodeURIComponent(JSON.stringify({ nodes, edges, extraValue }))))],
+        { type: "text/plain" },
+      ));
+      download.href = url;
+      download.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("import").addEventListener("click", () => {
+      upload.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            ({ nodes, edges, extraValue } = JSON.parse(decodeURIComponent(escape(atob(event.target.result.trim())))));
+            isAnimating = false;
+            animationEdges = [];
+            nodeBeingDistributed = null;
+            displayMessage("Level imported");
+            setTimeout(clearMessage, READING_DURATION);
+            drawLevel();
+          } catch (err) {
+            console.error(err);
+            alert("Failed to import level");
+          }
+        };
+        reader.readAsText(file);
+      });
+      upload.click();
+    });
+
+    document.getElementById("help").addEventListener("click", () => {
+      alert("Goal: Ensure all nodes are non-negative.\n\nControls: (1) Click or tap on a node to send one point of value to each neighbor, (2) Right-click or long-press on a node with a single neighbor to send all of its value to that neighbor.");
+    });
+  </script>
+</body>
+
+</html>
