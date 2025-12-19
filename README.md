@@ -1,3 +1,5 @@
+<img width="192" height="192" alt="NotiFilter favicon" src="/favicon.svg" />
+
 # Equilibrium
 
 **Only you can bring balance to the Network!**
