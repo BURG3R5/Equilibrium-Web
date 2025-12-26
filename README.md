@@ -1,10 +1,10 @@
-<img width="192" height="192" alt="NotiFilter favicon" src="/favicon.svg" />
+<img width="192" height="192" alt="Equilibrium favicon" src="https://github.com/BURG3R5/Equilibrium-Web/blob/main/favicon.svg" />
 
 # Equilibrium
 
 **Only you can bring balance to the Network!**
 
-![Equilibrium screenshot](/screenshot.png)
+![Equilibrium screenshot](https://github.com/BURG3R5/Equilibrium-Web/blob/main/screenshot.png)
 
 ## instructions
 
